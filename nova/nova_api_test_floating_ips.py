@@ -26,6 +26,7 @@ DEFAULT_VMNAME    = "demo"
 
 def _process_data(method=None, url=None, body=None, headers=None, host=NOVA_API_HOST):
     conn = httplib.HTTPConnection(host)
+    # conn.set_debuglevel(1)
     conn.request(method, url, body, headers)
     response = conn.getresponse()
     data = response.read()
