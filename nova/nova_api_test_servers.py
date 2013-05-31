@@ -13,10 +13,8 @@ import logging
 LOG_FORMAT = '%(asctime)s %(levelname)s %(thread)d %(module)s %(funcName)s %(message)s'
 logging.basicConfig(format=LOG_FORMAT, level=logging.DEBUG, filename='test.log')
 
-# URL
-KEYSTONE_URL = "127.0.0.1:5000"
-NOVA_API_URL = "127.0.0.1:8774"
-GLANCE_URL   = "127.0.0.1:9292"
+KEYSTONE_HOST = "127.0.0.1:5000"
+NOVA_API_HOST = "127.0.0.1:8774"
 
 # DEFAULT
 DEFAULT_USERNAME  = "admin"
@@ -24,32 +22,38 @@ DEFAULT_PASSWORD  = "password"
 DEFAULT_TENANT_ID = "fb7af3299b9546bf9d1b68375053ccf4"
 DEFAULT_IMAGE_ID  = "d5c172ea-658a-4ca1-9733-84ca84d1270e"
 DEFAULT_FLAVOR_ID = "1"
-DEFAULT_VMNAME    = "demo"    
+DEFAULT_VMNAME    = "demo"
+
+def _process_data(method=None, url=None, body=None, headers=None, host=NOVA_API_HOST):
+    conn = httplib.HTTPConnection(host)
+    conn.request(method, url, body, headers)
+    response = conn.getresponse()
+    data = response.read()
+    conn.close()
+    return data
+
+def get_tenant_id():
+    return DEFAULT_TENANT_ID
 
 def get_token_id(username=DEFAULT_USERNAME, password=DEFAULT_PASSWORD, tenant_id=DEFAULT_TENANT_ID):
     sUsername = "\"%s\"" % username
     sPassword = "\"%s\"" % password
     sTenantId = "\"%s\"" % tenant_id
 
-    params  = '{"auth":{"passwordCredentials":{"username": %(sUsername)s, "password":%(sPassword)s},\
+    body    = '{"auth":{"passwordCredentials":{"username": %(sUsername)s, "password":%(sPassword)s},\
                       "tenantId":%(sTenantId)s}}' % locals()
     headers = {"Content-Type": "application/json"}
+    url     = "/v2.0/tokens"
 
-    keystone_conn = httplib.HTTPConnection(KEYSTONE_URL)
-    keystone_conn.request("POST", "/v2.0/tokens", params, headers)
-
-    keystone_response  = keystone_conn.getresponse()
-    token_data         = json.loads(keystone_response.read())
-
-    access   = token_data.get('access')
-    token    = access.get('token')
-    token_id = token.get('id')
-
-    keystone_conn.close()
+    token_data = _process_data("POST", url, body, headers, KEYSTONE_HOST)
+    token_data = json.loads(token_data)
+    access     = token_data.get('access')
+    token      = access.get('token')
+    token_id   = token.get('id')
     return token_id
 
 def _launch_instance(**kwargs):
-    tenant_id          = kwargs.get('tenant_id', DEFAULT_TENANT_ID)
+    tenant_id          = kwargs.get('tenant_id', get_tenant_id())
     token_id           = kwargs.get('token_id', get_token_id())
     sName              = kwargs.get('name', DEFAULT_VMNAME)
     sImageRef          = kwargs.get('imageRef', DEFAULT_IMAGE_ID)
@@ -69,16 +73,11 @@ def _launch_instance(**kwargs):
 
     body    = json.dumps(s)
     headers = { "X-Auth-Token":token_id, "Content-type":"application/json" }
+    url     = "/v2/%(tenant_id)s/servers" % locals()
 
-    nova_api_conn = httplib.HTTPConnection(NOVA_API_URL)
-    nova_api_conn.request("POST", "/v2/%(tenant_id)s/servers" % locals(), body, headers)
-
-    response = nova_api_conn.getresponse()
-    data = response.read()
+    data = _process_data("POST", url, body, headers)
     dd   = json.loads(data)
-
-    nova_api_conn.close()
-    print json.dumps(dd, indent=2)
+    # print json.dumps(dd, indent=2)
     return dd
 
 def launch_instance():
@@ -110,20 +109,16 @@ def launch_instance():
 
 
 def terminate_instance(server_id):
-    tenant_id = DEFAULT_TENANT_ID
+    tenant_id = get_tenant_id()
     token_id  = get_token_id()
 
     body    = None
     headers = { "X-Auth-Token":token_id, "Content-type":"application/json" }
+    url     = "/v2/%(tenant_id)s/servers/%(server_id)s" % locals()
 
-    nova_api_conn = httplib.HTTPConnection(NOVA_API_URL)
-    nova_api_conn.request("DELETE", "/v2/%(tenant_id)s/servers/%(server_id)s" % locals(), body, headers)
-
-    response = nova_api_conn.getresponse()
-    data = response.read()
+    data = _process_data("DELETE", url, body, headers)
     if data:
         dd   = json.loads(data)
-        nova_api_conn.close()
         print json.dumps(dd, indent=2)
 
 def main():
